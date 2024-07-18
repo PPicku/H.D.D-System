@@ -760,7 +760,8 @@ class exitScreen(QWidget, Ui_exit):
         painter.drawPixmap(self.rect(), pixmap)
 
 
-app = QApplication([])
-window = Main()
-window.show()
-app.exec()
+if __name__ == "__main__":
+    app = QApplication([])
+    window = Main()
+    window.show()
+    app.exec()
