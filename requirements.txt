@@ -1,0 +1,8 @@
+pyqt5
+pygame
+requests
+pywinstyles
+psutil
+cachelib
+PyQt-Fluent-Widgets
+wmi
