@@ -759,8 +759,8 @@ class exitScreen(QWidget, Ui_exit):
         pixmap = QPixmap("bg.png")  # 换成自己的图片的相对路径
         painter.drawPixmap(self.rect(), pixmap)
 
-
-app = QApplication([])
-window = Main()
-window.show()
-app.exec()
+if __name__ == "__main__":
+    app = QApplication([])
+    window = Main()
+    window.show()
+    app.exec()
