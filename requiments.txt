@@ -1,0 +1,9 @@
+PyQt5
+pywinstyles
+requests
+pygame
+systemInfo
+PyQt-Fluent-Widgets[full] -i https://pypi.org/simple/
+cachelib
+wmi
+psutil
