@@ -1,7 +1,7 @@
 
 # H.D.D System
 
-这个一个还原游戏《绝区零》中 H.D.D (Hollow Deep Dive System) 的一段基于 PyQt5 的 Python GUI程序。
+这是一个还原游戏《绝区零》中 H.D.D (Hollow Deep Dive System) 的一段基于 PyQt5 的 Python GUI程序。
 
 
 
