@@ -13,17 +13,17 @@
 ## 使用方法/示例
 1.下载主分支文件
 2.安装必要运行库
-    # macOS
+### macOS
     # 升级 pip
     pip3 install --upgrade pip
     # 安装必要依赖
     pip3 install -r requirements.txt
-    
-    # Windows
+### Windows
     # 升级 pip
     pip install --upgrade pip
     # 安装必要依赖
     pip install -r requirements.txt
+
 
 
 
