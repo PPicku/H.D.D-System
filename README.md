@@ -1,7 +1,7 @@
 
 # H.D.D System
 
-这个一个还原游戏《绝区零》中 H.D.D (Hollow Deep Dive System) 的一段基于 PyQt5 的 Python GUI程序。
+这是一个还原游戏《绝区零》中 H.D.D (Hollow Deep Dive System) 的一段基于 PyQt5 的 Python GUI程序。
 
 
 
@@ -11,10 +11,23 @@
 
 
 ## 使用方法/示例
+1.下载主分支文件
+2.安装必要运行库
+### macOS
+    # 升级 pip
+    pip3 install --upgrade pip
+    # 安装必要依赖
+    pip3 install -r requirements.txt
+### Windows
+    # 升级 pip
+    pip install --upgrade pip
+    # 安装必要依赖
+    pip install -r requirements.txt
 
-下载主分支文件，然后安装requiments.txt里的库。随后，像运行一个正常 .py 文件一样运行Main.py。
 
-或者，你可以下载releases里面编译好的exe文件。
+
+
+或者，你可以下载releases里面编译好的可执行程序文件。
 ## FAQ
 
 #### 程序排版错乱/字体太小？
