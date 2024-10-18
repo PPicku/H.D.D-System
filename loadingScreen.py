@@ -9,7 +9,7 @@
 
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-
+from qfluentwidgets.components.widgets.progress_ring import IndeterminateProgressRing
 
 class Ui_loading(object):
     def setupUi(self, loading):
@@ -206,4 +206,3 @@ class Ui_loading(object):
         _translate = QtCore.QCoreApplication.translate
         loading.setWindowTitle(_translate("loading", "Form"))
         self.label.setText(_translate("loading", "<html><head/><body><p align=\"center\"><span style=\" font-size:28pt;\">正在与邦布建立通讯...</span></p></body></html>"))
-from qfluentwidgets import IndeterminateProgressRing
