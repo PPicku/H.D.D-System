@@ -1,0 +1,7 @@
+psutil
+pygame
+pywinstyles
+pyqt5
+cachelib
+PyQt-Fluent-Widgets[full]
+wmi
