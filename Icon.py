@@ -170,7 +170,7 @@ class Ui_Icon(object):
         self.verticalLayout.setObjectName("verticalLayout")
         self.label = QtWidgets.QLabel(self.verticalLayoutWidget)
         self.label.setText("")
-        self.label.setPixmap(QtGui.QPixmap("bootScreen.png"))
+        self.label.setPixmap(QtGui.QPixmap("res/img/bootScreen.png"))
         self.label.setScaledContents(False)
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setObjectName("label")

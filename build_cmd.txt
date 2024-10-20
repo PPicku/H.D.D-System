@@ -1,0 +1,1 @@
+pyinstaller --onefile --windowed --add-data "res;res" --ico="F:\python_play\H.D.D-System-main\res\Icon.ico" H.D.D-System.PY
