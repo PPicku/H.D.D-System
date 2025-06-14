@@ -8,7 +8,8 @@
 
 ### 从二进制文件运行
 
-从 [Releases](https://github.com/PPicku/H.D.D-System/releases) 下载构建好的二进制文件。
+从 [Releases](https://github.com/PPicku/H.D.D-System/releases) 下载构建好的二进制文件。\
+[!]注：该版本为PR#8之前的版本，并且没有MacOS版本
 
 ### 从源代码运行
 
@@ -32,3 +33,4 @@
 
 - [@Pickup\_拾柒 (Github 链接)](https://github.com/PPicku)
 - [@Pickup\_拾柒 (Bilibili 链接)](https://space.bilibili.com/1638525867)
+- [@NAAAAAAAAA1212（增加MacOS平台支持）](https://github.com/NAAAAAAAAA1212)

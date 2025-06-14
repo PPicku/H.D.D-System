@@ -41,11 +41,11 @@ deactivate
 ### 安装项目所需库
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.[windows 或者 macos].txt
 ```
 
 ### 运行项目代码
 
 ```bash
-python .\main.py
+python .\Main.PY
 ```
