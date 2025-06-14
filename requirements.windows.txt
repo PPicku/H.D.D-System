@@ -1,0 +1,6 @@
+PyQt5
+requests
+psutil
+pygame
+pywinstyles
+pywin32
