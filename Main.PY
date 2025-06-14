@@ -1,28 +1,72 @@
+# -*- coding: utf-8 -*-
+# 原代码作者为Github用户PPicku
+# 该版本代码为Github用户NAAAAAAAAA1212
+# 主要更改为：
+# - 增加跨平台运行
+# - 优化部分代码
+
 import sys
 import threading
 import webbrowser
-import winsound
-from winsound import *
+import requests
+import platform  # 用于检测操作系统
+import psutil    # 跨平台系统信息获取
+import os
+import subprocess
 from PyQt5 import QtGui
 from PyQt5.QtCore import *
 from PyQt5.QtGui import QFont, QFontDatabase, QTextCursor, QPainter, QPixmap, QIcon
 from PyQt5.QtWidgets import *
-from PyQt5.QtWidgets import QWidget
-from pywinstyles import *
-from hddLoading import QtCore, Ui_Form
+import pygame    # 用于音频播放
+
+# 根据平台导入特定库
+if platform.system() == "Windows":
+    # Windows特有库
+    import ctypes
+    import winsound
+    from winsound import *
+    try:
+        from pywinstyles import apply_style  # Windows界面美化
+    except ImportError:
+        print("警告：pywinstyles库不可用，界面样式将使用默认")
+else:
+    # macOS不需要这些库
+    pass
+
+# 导入UI文件（由PyQt Designer生成）
+from hddLoading import Ui_Form
 from Icon import Ui_Icon
 from MainPage import Ui_MainPage
 from errorScreen import Ui_error
 from loadingScreen import Ui_loading
 from aboutScreen import Ui_about
 from exitScreen import Ui_exit
-import ctypes
-import requests
-import pygame
-import systemInfo
 
+# 全局变量：主界面显示的文本
+name = "欢迎，「法厄同」_"
 
+# 资源路径处理函数（用于PyInstaller打包后访问资源）
+def resource_path(relative_path):
+    """获取资源的绝对路径，用于PyInstaller打包"""
+    try:
+        # PyInstaller创建的临时文件夹路径
+        base_path = sys._MEIPASS
+    except Exception:
+        # 当前文件所在目录
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# 在QTextEdit中逐行滚动显示文本的函数
 def scroll_text_in_label(win, label: QTextEdit, text_lines: str, interval_ms: int = 1000):
+    """
+    在QTextEdit控件中逐行显示文本
+    
+    参数:
+        win: 父窗口
+        label: 文本显示控件
+        text_lines: 要显示的文本内容
+        interval_ms: 行显示间隔(毫秒)
+    """
     current_line = 0
     text_lines = text_lines.split("\n")
 
@@ -33,7 +77,7 @@ def scroll_text_in_label(win, label: QTextEdit, text_lines: str, interval_ms: in
     loop = QEventLoop(win)
 
     def on_timeout():
-        nonlocal current_line  # 声明current_line为nonlocal，以便在内部函数中修改  
+        nonlocal current_line
         if current_line < len(text_lines):
             # 追加文本并换行  
             label.setText(label.toPlainText() + text_lines[current_line] + "\n")
@@ -50,27 +94,63 @@ def scroll_text_in_label(win, label: QTextEdit, text_lines: str, interval_ms: in
     timer.start(interval_ms)
     loop.exec_()
 
-
-# 定义一个函数，用于获取系统信息
+# 获取系统信息（跨平台实现）
 def system_info():
-    # 获取CPU信息
-    cpuInfo = systemInfo.GetCpuConstants()
+    """
+    获取并返回系统信息字符串
+    
+    返回:
+        格式化的系统信息字符串
+    """
+    # 跨平台获取CPU信息
+    cpu_info = platform.processor()
+    
+    # 获取CPU核心数
+    try:
+        cpu_count = psutil.cpu_count(logical=False)  # 物理核心
+        cpu_threads = psutil.cpu_count(logical=True)  # 逻辑核心/线程
+    except:
+        cpu_count = "N/A"
+        cpu_threads = "N/A"
+    
     # 获取内存信息
-    memInfo = systemInfo.GetMemInfo()
-    # 获取磁盘信息
-    diskInfoRaw = systemInfo.GetDiskInfo()
-    # 获取磁盘总大小
-    diskInfo = diskInfoRaw[0]['size']['total']
+    try:
+        mem = psutil.virtual_memory()
+        mem_total = f"{mem.total // (1024 * 1024)} MB"  # 转换为MB
+    except:
+        mem_total = "N/A"
+    
+    # 获取磁盘信息（平台相关路径）
+    try:
+        # Windows使用C盘，macOS使用根目录
+        disk_path = 'C:\\' if platform.system() == "Windows" else '/'
+        disk = psutil.disk_usage(disk_path)
+        disk_total = f"{disk.total // (1024 * 1024 * 1024)} GB"  # 转换为GB
+    except:
+        disk_total = "N/A"
 
-    # 返回系统信息
-    return (f"// SYSTEM SELF-TEST\nCPU_COUNT: {cpuInfo['cpu_count']}\nCPU_NAME: {cpuInfo['cpu_name']}\nCPU_CORES: "
-            f"{cpuInfo['cpu_core']}\nCPU_THREADS: {cpuInfo['cpu_threads']}\nMEMORY: {memInfo['memTotal']} MB\n"
-            f"DISK: {diskInfo} B\n// COMPLETE.")
+    # 苹果芯片特殊处理
+    if platform.system() != "Windows" and cpu_info == "arm":
+        cpu_info = "Apple Silicon"
 
+    # 返回格式化系统信息
+    return (f"// SYSTEM SELF-TEST\nCPU: {cpu_info}\nCPU_CORES: {cpu_count}\n"
+            f"CPU_THREADS: {cpu_threads}\nMEMORY: {mem_total}\n"
+            f"DISK: {disk_total}\n// COMPLETE.")
 
+# 淡入淡出效果类（带事件循环）
 class FadeEffectWithLoop:
-    # 初始化FadeEffectWithLoop类，设置窗口、控件和动画时长
+    """实现带事件循环的淡入淡出效果"""
+    
     def __init__(self, win, widget, duration=1000):
+        """
+        初始化淡入淡出效果
+        
+        参数:
+            win: 父窗口
+            widget: 应用效果的控件
+            duration: 动画时长(毫秒)
+        """
         self.widget = widget
         self.win = win
         self.effect = QGraphicsOpacityEffect(widget)
@@ -78,8 +158,8 @@ class FadeEffectWithLoop:
         self.animation = QPropertyAnimation(self.effect, b"opacity")
         self.animation.setDuration(duration)
 
-    # 淡入效果
     def fade_in(self):
+        """淡入效果"""
         loop = QEventLoop(self.win)
         self.animation.setStartValue(0.0)
         self.animation.setEndValue(1.0)
@@ -87,8 +167,8 @@ class FadeEffectWithLoop:
         self.animation.start()
         loop.exec_()
 
-    # 淡出效果
     def fade_out(self):
+        """淡出效果"""
         loop = QEventLoop(self.win)
         self.animation.setStartValue(1.0)
         self.animation.setEndValue(0.0)
@@ -96,12 +176,14 @@ class FadeEffectWithLoop:
         self.animation.start()
         loop.exec_()
 
+# 加载界面（显示启动信息的界面）
 class Loading(QWidget, Ui_Form):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
-        # 设置字体
-        font = QFont("Consolas", pointSize=15)
+        # 设置字体：Windows用Consolas，macOS用Menlo
+        font_name = "Consolas" if platform.system() == "Windows" else "Menlo"
+        font = QFont(font_name, pointSize=15)
         self.setFont(font)
         self.label.setFont(font)
         # 设置布局
@@ -110,10 +192,11 @@ class Loading(QWidget, Ui_Form):
         self.label.setText("")
         # 当标签文本改变时，将光标移动到文本末尾
         self.label.textChanged.connect(lambda: self.label.moveCursor(QTextCursor.End))
-        # 设置垂直滚动条和水平滚动条策略
+        # 隐藏滚动条
         self.label.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        # 设置文本1
+        
+        # 预定义显示文本（模拟代码）
         self.text1 = '''
 //////////////////////////////////////////////
 // copyright(C)A.K.A Hollow Deep Dive System
@@ -140,9 +223,7 @@ namespace Hollow
             HCRESULI SyncVisualSensor(const HHatrics matWorld,HLINT hollowIndex);
     }
 }
-#endif // DEEP_DIVE_PROTOTYPE_V4_H
-'''
-        # 设置文本2
+#endif // DEEP_DIVE_PROTOTYPE_V4_H'''
         self.text2 = '''
 //////////////////////////////////////////////
 // copyright(C)A.K.A Hollow Deep Dive System
@@ -174,592 +255,525 @@ namespace Hollow
     }
 }'''
 
-    # 显示文本0
     def showText0(self):
-        # 获取系统信息
+        """显示系统信息文本"""
         text0 = system_info()
-        # 在标签中滚动显示文本
         scroll_text_in_label(self, self.label, text0, 1000)
-        # 播放声音
-        player = ctypes.windll.kernel32
-        player.Beep(3000, 500)
-        # 创建事件循环
+        
+        # 平台相关声音提示
+        if platform.system() == "Windows":
+            try:
+                # Windows播放声音
+                player = ctypes.windll.kernel32
+                player.Beep(3000, 500)
+            except:
+                pass
+        else:
+            # macOS播放声音
+            try:
+                subprocess.run(["afplay", "/System/Library/Sounds/Ping.aiff"])
+            except:
+                pass
+                
+        # 等待2秒
         loop = QEventLoop(self)
-        # 清空标签文本
         self.label.setText("")
-        # 设置定时器，2秒后退出事件循环
         QTimer.singleShot(2000, loop.quit)
-        # 执行事件循环
         loop.exec()
-        # 创建事件循环
+        
+        # 再等待1秒
         loop = QEventLoop(self)
-        # 设置定时器，1秒后退出事件循环
         QTimer.singleShot(1000, loop.quit)
-        # 执行事件循环
         loop.exec()
 
-    # 显示文本1
     def showText1(self):
-        # 在标签中滚动显示文本
+        """显示第一段模拟代码"""
         scroll_text_in_label(self, self.label, self.text1, 100)
-        # 创建事件循环
         loop = QEventLoop(self)
-        # 设置定时器，100毫秒后退出事件循环
         QTimer.singleShot(100, loop.quit)
-        # 执行事件循环
         loop.exec()
 
-    # 显示文本2
     def showText2(self):
-        # 在标签中滚动显示文本
+        """显示第二段模拟代码和启动完成信息"""
         scroll_text_in_label(self, self.label, self.text2, 100)
-        # 创建事件循环
         loop = QEventLoop(self)
-        # 设置定时器，1秒后退出事件循环
         QTimer.singleShot(1000, loop.quit)
-        # 执行事件循环
         loop.exec()
-        # 在标签中滚动显示文本
+        
+        # 显示启动完成信息
         scroll_text_in_label(self, self.label, "\n \n \nSystem boot complete.", 500)
-        # 创建事件循环
         loop = QEventLoop(self)
-        # 设置定时器，300毫秒后退出事件循环
         QTimer.singleShot(300, loop.quit)
-        # 执行事件循环
         loop.exec()
 
+# 图标展示界面
 class showIcon(QWidget, Ui_Icon):
-    # 定义一个showIcon类，继承自QWidget和Ui_Icon
     def __init__(self):
-        # 初始化函数
         super().__init__()
-        # 调用父类的初始化函数
         self.setupUi(self)
-        # 调用setupUi函数，设置界面
         self.setLayout(self.verticalLayout)
-        # 设置布局为verticalLayout
 
-
+# 主界面
 class MainPage(QWidget, Ui_MainPage):
-    # 定义一个MainPage类，继承自QWidget和Ui_MainPage
     def __init__(self):
-        # 初始化函数
         super().__init__()
-        # 调用父类的初始化函数
         self.setupUi(self)
-        # 调用setupUi函数，设置界面
-        font_id1 = QFontDatabase.addApplicationFont("black.ttf")
-        # 添加字体文件
-        self.font_name1 = QFontDatabase.applicationFontFamilies(font_id1)[0]
-        # 获取字体文件名
-        font = QFont(self.font_name1, pointSize=18)
+        
+        # 加载字体文件
+        font_path = resource_path("black.ttf")
+        if os.path.exists(font_path):
+            font_id = QFontDatabase.addApplicationFont(font_path)
+            self.font_name = QFontDatabase.applicationFontFamilies(font_id)[0] if font_id != -1 else "Helvetica"
+        else:
+            # 平台默认字体
+            self.font_name = "Helvetica" if platform.system() != "Windows" else "Consolas"
+            
         # 设置字体
+        font = QFont(self.font_name, pointSize=18)
         self.setFont(font)
-        # 设置界面字体
-        self.label.setFont(QFont(self.font_name1, pointSize=130))
-        # 设置label字体
+        self.label.setFont(QFont(self.font_name, pointSize=130))
         self.exeButton.setFont(font)
-        # 设置exeButton字体
         self.toButton.setFont(font)
-        # 设置toButton字体
         self.aboutButton.setFont(font)
-        # 设置aboutButton字体
         self.exitButton.setFont(font)
-        # 设置exitButton字体
+        
+        # 设置布局
         self.setLayout(self.verticalLayout)
-        # 设置布局为verticalLayout
         self.verticalLayout.setContentsMargins(50, 20, 20, 20)
-        # 设置布局的边距
         self.label.setText("")
-        # 设置label文本为空
+        
+        # 初始化音频系统
         pygame.mixer.init()
-        # 初始化pygame的混音器
         pygame.mixer.music.set_volume(0.5)
-        # 设置混音器的音量为0.5
 
     def onLabel(self):
-        # 设置标签文本为"欢_"
-        self.label.setText("欢_")
-        # 创建一个事件循环
-        loop = QEventLoop(self)
-        # 单次定时器，500毫秒后退出事件循环
-        QTimer.singleShot(500, loop.quit)
-        # 执行事件循环
-        loop.exec()
-        # 设置标签文本为"欢迎_"
-        self.label.setText("欢迎_")
-        # 创建一个事件循环
-        loop = QEventLoop(self)
-        # 单次定时器，500毫秒后退出事件循环
-        QTimer.singleShot(500, loop.quit)
-        # 执行事件循环
-        loop.exec()
-        # 设置标签文本为"欢迎,_"
-        self.label.setText("欢迎,_")
-        # 创建一个事件循环
-        loop = QEventLoop(self)
-        # 单次定时器，1500毫秒后退出事件循环
-        QTimer.singleShot(1500, loop.quit)
-        # 执行事件循环
-        loop.exec()
-        # 设置标签文本为"欢迎,「_"
-        self.label.setText("欢迎,「_")
-        # 创建一个事件循环
-        loop = QEventLoop(self)
-        # 单次定时器，500毫秒后退出事件循环
-        QTimer.singleShot(500, loop.quit)
-        # 执行事件循环
-        loop.exec()
-        # 设置标签文本为"欢迎,「法_"
-        self.label.setText("欢迎,「法_")
-        # 创建一个事件循环
-        loop = QEventLoop(self)
-        # 单次定时器，500毫秒后退出事件循环
-        QTimer.singleShot(500, loop.quit)
-        # 执行事件循环
-        loop.exec()
-        # 设置标签文本为"欢迎,「法厄_"
-        self.label.setText("欢迎,「法厄_")
-        # 创建一个事件循环
-        loop = QEventLoop(self)
-        # 单次定时器，500毫秒后退出事件循环
-        QTimer.singleShot(500, loop.quit)
-        # 执行事件循环
-        loop.exec()
-        # 设置标签文本为"欢迎,「法厄同_"
-        self.label.setText("欢迎,「法厄同_")
-        # 创建一个事件循环
-        loop = QEventLoop(self)
-        # 单次定时器，500毫秒后退出事件循环
-        QTimer.singleShot(500, loop.quit)
-        # 执行事件循环
-        loop.exec()
-        # 设置标签文本为"欢迎,「法厄同」_"
-        self.label.setText("欢迎,「法厄同」_")
-        # 创建一个事件循环
-        loop = QEventLoop(self)
-        # 单次定时器，500毫秒后退出事件循环
-        QTimer.singleShot(500, loop.quit)
-        # 执行事件循环
-        loop.exec()
+        """逐字符显示标题文本"""
+        current_string = ""
+        for char in name:
+            if char != "_":
+                current_string += char
+            self.label.setText(current_string)
+            # 每个字符显示间隔500毫秒
+            loop = QEventLoop(self) 
+            QTimer.singleShot(500, loop.quit)
+            loop.exec()
 
     @staticmethod
     def startPlay():
-        # 加载音乐文件
-        pygame.mixer.music.load("zzzExplorer.mp3")
-        # 播放音乐，设置淡入时间为3000毫秒，循环播放
-        pygame.mixer.music.play(fade_ms=3000, loops=-1)
+        """播放主界面背景音乐"""
+        try:
+            pygame.mixer.music.load(resource_path("zzzExplorer.mp3"))
+            pygame.mixer.music.play(fade_ms=3000, loops=-1)  # 淡入播放，循环
+        except Exception as e:
+            print(f"音乐播放失败: {e}")
 
     @staticmethod
     def stopPlay():
-        # 淡出音乐，设置淡出时间为1000毫秒
-        pygame.mixer.music.fadeout(1000)
-        # 1秒后停止播放音乐
-        QTimer.singleShot(1000, pygame.mixer.music.stop)
+        """停止主界面音乐"""
+        try:
+            pygame.mixer.music.fadeout(1000)  # 淡出效果
+            QTimer.singleShot(1000, pygame.mixer.music.stop)  # 确保停止
+        except:
+            pass
 
     @staticmethod
     def startPlayBattle():
-        # 加载音乐文件
-        pygame.mixer.music.load("zzzBattle.mp3")
-        # 播放音乐，设置淡入时间为500毫秒，循环播放
-        pygame.mixer.music.play(fade_ms=500, loops=-1)
+        """播放战斗音乐"""
+        try:
+            pygame.mixer.music.load(resource_path("zzzBattle.mp3"))
+            pygame.mixer.music.play(fade_ms=500, loops=-1)
+        except Exception as e:
+            print(f"战斗音乐播放失败: {e}")
 
     @staticmethod
     def stopPlayBattle():
-        # 淡出音乐，设置淡出时间为500毫秒
-        pygame.mixer.music.fadeout(500)
-        # 0.5秒后停止播放音乐
-        QTimer.singleShot(500, pygame.mixer.music.stop)
+        """停止战斗音乐"""
+        try:
+            pygame.mixer.music.fadeout(500)
+            QTimer.singleShot(500, pygame.mixer.music.stop)
+        except:
+            pass
 
     def paintEvent(self, a0):
-        # 创建一个QPainter对象
+        """绘制背景图片"""
         painter = QPainter(self)
-        # 绘制一个矩形
         painter.drawRect(self.rect())
-        # 加载图片文件
-        pixmap = QPixmap("bg.png")  # 换成自己的图片的相对路径
-        # 在矩形内绘制图片
-        painter.drawPixmap(self.rect(), pixmap)
+        try:
+            pixmap = QPixmap(resource_path("bg.png"))
+            painter.drawPixmap(self.rect(), pixmap)
+        except:
+            # 出错时使用黑色背景
+            painter.fillRect(self.rect(), Qt.black)
 
-
+# 主窗口
 class Main(QMainWindow):
     def __init__(self):
         super().__init__()
-        # 定义一个变量quickFade，用于存储快速淡出效果
-        self.quickFade = None
-        # 调用user32.dll库
-        self.u32 = ctypes.windll.user32
-        # 应用暗色主题
-        apply_style(self, "dark")
-        # 设置窗口标题
+        self.quickFade = None  # 快速淡入淡出效果对象
+        
+        # 设置窗口属性
         self.setWindowTitle("H.D.D.System")
-        # 初始化调色板
+        
+        # Windows平台应用暗色主题
+        if platform.system() == "Windows":
+            try:
+                from pywinstyles import apply_style
+                apply_style(self, "dark")
+            except ImportError:
+                print("界面美化不可用，使用默认样式")
+        
+        # 初始化界面颜色
         self.init_palette()
-        # 创建一个堆叠窗口
+        
+        # 创建堆叠窗口（用于多界面切换）
         self.container = QStackedWidget(self)
-        # 设置窗口中央部件
         self.setCentralWidget(self.container)
-        # 全屏显示窗口
-        self.showFullScreen()
-        # 设置窗口图标
-        self.setWindowIcon(QIcon("Icon.ico"))
-        # 创建一个淡出效果
-        self.fade = FadeEffectWithLoop(self, self.container)
+        self.showFullScreen()  # 全屏显示
+        self.setWindowIcon(QIcon(resource_path("Icon.ico")))
+        self.fade = FadeEffectWithLoop(self, self.container)  # 淡入淡出效果
 
-        # 创建一个加载界面
+        # 创建并添加各个界面
         self.load = Loading()
-        # 将加载界面添加到堆叠窗口中
         self.container.addWidget(self.load)
 
-        # 创建一个图标界面
         self.icon = showIcon()
-        # 将图标界面添加到堆叠窗口中
         self.container.addWidget(self.icon)
 
-        # 创建一个主界面
         self.main = MainPage()
-        # 将主界面添加到堆叠窗口中
         self.container.addWidget(self.main)
-        # 将主界面的exeButton按钮的点击事件与onError函数连接
-        self.main.exeButton.clicked.connect(self.onError)
+        self.main.exeButton.clicked.connect(self.onError)  # 绑定按钮事件
 
-        # 创建一个错误界面
         self.error = errorScreen()
-        # 将错误界面添加到堆叠窗口中
         self.container.addWidget(self.error)
-        # 将错误界面的backButton按钮的点击事件与onBack函数连接
         self.error.backButton.clicked.connect(self.onBack)
 
-        # 创建一个加载界面
         self.loading = loadingScreen()
-        # 将加载界面添加到堆叠窗口中
         self.container.addWidget(self.loading)
 
-        # 创建一个关于界面
         self.about = aboutScreen()
-        # 将关于界面添加到堆叠窗口中
         self.container.addWidget(self.about)
-        # 将关于界面的backButton按钮的点击事件与onBack_函数连接
         self.about.backButton.clicked.connect(self.onBack_)
-        # 将主界面的aboutButton按钮的点击事件与onAbout函数连接
         self.main.aboutButton.clicked.connect(self.onAbout)
 
-        # 创建一个退出界面
         self.exit = exitScreen()
-        # 将退出界面添加到堆叠窗口中
         self.container.addWidget(self.exit)
-        # 将退出界面的backButton_2按钮的点击事件与onBack_函数连接
         self.exit.backButton_2.clicked.connect(self.onBack_)
-        # 将主界面的exitButton按钮的点击事件与onExit函数连接
         self.main.exitButton.clicked.connect(self.onExit)
 
-        # 将主界面的toButton按钮的点击事件与onWeb函数连接
         self.main.toButton.clicked.connect(self.onWeb)
 
-        # 将堆叠窗口的当前界面设置为加载界面
+        # 启动流程
+        self.startup_sequence()
+
+    def startup_sequence(self):
+        """应用程序启动序列"""
+        # 初始显示加载界面
         self.container.setCurrentWidget(self.load)
-        # 显示加载界面的文本
-        self.load.showText0()
-        self.load.showText1()
-        self.load.showText2()
-        # 创建一个事件循环
+        self.load.showText0()  # 系统信息
+        self.load.showText1()  # 模拟代码1
+        self.load.showText2()  # 模拟代码2和启动完成
+        
+        # 等待1秒
         loop = QEventLoop(self)
-        # 设置一个定时器，1秒后退出事件循环
         QTimer.singleShot(1000, loop.quit)
-        # 执行事件循环
         loop.exec()
-        # 执行淡出效果
+        
+        # 切换到图标界面
         self.fade.fade_out()
-        # 将堆叠窗口的当前界面设置为图标界面
         self.container.setCurrentWidget(self.icon)
-        # 执行淡入效果
         self.fade.fade_in()
-        # 创建一个事件循环
+        
+        # 图标显示3秒
         loop = QEventLoop(self)
-        # 设置一个定时器，3秒后退出事件循环
         QTimer.singleShot(3000, loop.quit)
-        # 执行事件循环
         loop.exec()
-        # 执行淡出效果
+        
+        # 切换到主界面
         self.fade.fade_out()
-        # 将堆叠窗口的当前界面设置为主界面
         self.container.setCurrentWidget(self.main)
-        # 执行淡入效果
         self.fade.fade_in()
-        # 执行主界面的startPlay函数
-        self.main.startPlay()
-        # 执行主界面的onLabel函数
-        self.main.onLabel()
+        self.main.startPlay()  # 播放主界面音乐
+        self.main.onLabel()    # 显示动态文本
 
     def onError(self):
-        # 播放错误音效
+        """处理执行按钮点击事件（进入错误流程）"""
         self.playSound()
-        # 如果quickFade为空，则创建一个FadeEffectWithLoop对象
         if not self.quickFade:
             self.quickFade = FadeEffectWithLoop(self, self.container, 250)
 
-        # 停止播放主界面
+        # 停止主音乐，准备战斗音乐
         self.main.stopPlay()
-        # 在1.5秒后开始播放战斗界面
         QTimer.singleShot(1500, self.main.startPlayBattle)
-        # 执行淡出效果
+        
+        # 切换到加载中界面
         self.quickFade.fade_out()
-        # 将容器设置为loading界面
         self.container.setCurrentWidget(self.loading)
-        # 执行淡入效果
         self.quickFade.fade_in()
-        # 创建一个事件循环，在10秒后退出
+        
+        # 模拟10秒加载过程
         loop = QEventLoop(self)
         QTimer.singleShot(10000, loop.quit)
         loop.exec()
-        # 执行淡出效果
+        
+        # 切换到错误界面
         self.quickFade.fade_out()
-        # 将容器设置为error界面
         self.container.setCurrentWidget(self.error)
-        # 执行淡入效果
         self.quickFade.fade_in()
 
     def onBack(self):
-        # 播放返回音效
+        """从错误界面返回主界面"""
         self.playSound()
-        # 如果quickFade为空，则创建一个FadeEffectWithLoop对象
         if not self.quickFade:
             self.quickFade = FadeEffectWithLoop(self, self.container, 250)
 
-        # 停止播放战斗界面
+        # 停止战斗音乐
         self.main.stopPlayBattle()
-        # 执行淡出效果
+        
+        # 返回主界面
         self.quickFade.fade_out()
-        # 将容器设置为main界面
         self.container.setCurrentWidget(self.main)
-        # 执行淡入效果
         self.quickFade.fade_in()
-        # 如果main界面的label文本不是"欢迎,「法厄同」_"，则将其设置为"欢迎,「法厄同」_"
-        if self.main.label.text() != "欢迎,「法厄同」_":
-            self.main.label.setText("欢迎,「法厄同」_")
+        
+        # 恢复标题文本
+        if self.main.label.text() != name:
+            self.main.label.setText(name)
 
-        # 开始播放主界面
+        # 播放主界面音乐
         self.main.startPlay()
 
     def onBack_(self):
-        # 播放声音
+        """从子界面（关于/退出）返回主界面"""
         self.playSound()
-        # 如果quickFade为空，则创建一个FadeEffectWithLoop对象
         if not self.quickFade:
             self.quickFade = FadeEffectWithLoop(self, self.container, 250)
 
-        # 执行淡出效果
+        # 返回主界面
         self.quickFade.fade_out()
-        # 将当前窗口设置为main
         self.container.setCurrentWidget(self.main)
-        # 执行淡入效果
         self.quickFade.fade_in()
-        # 如果main窗口的label文本不是"欢迎,「法厄同」_"，则将其设置为"欢迎,「法厄同」_"
-        if self.main.label.text() != "欢迎,「法厄同」_":
-            self.main.label.setText("欢迎,「法厄同」_")
+        
+        # 恢复标题文本
+        if self.main.label.text() != name:
+            self.main.label.setText(name)
 
     def onAbout(self):
-        # 播放声音
+        """进入关于界面"""
         self.playSound()
-        # 如果quickFade为空，则创建一个FadeEffectWithLoop对象
         if not self.quickFade:
             self.quickFade = FadeEffectWithLoop(self, self.container, 250)
 
-        # 执行淡出效果
+        # 切换到关于界面
         self.quickFade.fade_out()
-        # 将当前窗口设置为about
         self.container.setCurrentWidget(self.about)
-        # 执行淡入效果
         self.quickFade.fade_in()
 
     def onExit(self):
-        # 播放声音
+        """进入退出界面"""
         self.playSound()
-        # 如果quickFade为空，则创建一个FadeEffectWithLoop对象
         if not self.quickFade:
             self.quickFade = FadeEffectWithLoop(self, self.container, 250)
 
-        # 执行淡出效果
+        # 切换到退出界面
         self.quickFade.fade_out()
-        # 将当前窗口设置为exit
         self.container.setCurrentWidget(self.exit)
-        # 执行淡入效果
         self.quickFade.fade_in()
 
     def onWeb(self):
-        # 播放声音
+        """打开网页"""
         self.playSound()
-        # 打开网页
         webbrowser.open("https://baike.mihoyo.com/zzz/wiki/")
 
     def closeEvent(self, a0, QCloseEvent=None):
-        # 退出程序
+        """关闭应用程序"""
         sys.exit()
 
-    @staticmethod
-    def playSound():
-        threading.Thread(target=lambda: winsound.PlaySound("./click.wav", SND_ASYNC)).start()
+    def playSound(self):
+        """播放点击音效（跨平台实现）"""
+        if platform.system() == "Windows":
+            # Windows使用winsound
+            try:
+                threading.Thread(
+                    target=lambda: winsound.PlaySound(
+                        resource_path("click.wav"), 
+                        SND_ASYNC
+                    )
+                ).start()
+            except:
+                pass
+        else:
+            # macOS/Linux使用pygame或系统命令
+            try:
+                sound = pygame.mixer.Sound(resource_path("click.wav"))
+                sound.play()
+            except:
+                try:
+                    subprocess.run(["afplay", resource_path("click.wav")])
+                except:
+                    pass
 
     def init_palette(self):
+        """初始化界面调色板（黑底白字）"""
         palette = QtGui.QPalette()
-        brush = QtGui.QBrush(QtGui.QColor(255, 255, 255))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.WindowText, brush)
-        brush = QtGui.QBrush(QtGui.QColor(255, 255, 255))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Text, brush)
-        brush = QtGui.QBrush(QtGui.QColor(0, 0, 0))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Base, brush)
-        brush = QtGui.QBrush(QtGui.QColor(0, 0, 0))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Window, brush)
-        brush = QtGui.QBrush(QtGui.QColor(255, 255, 255, 128))
-        brush.setStyle(QtCore.Qt.NoBrush)
-        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.PlaceholderText, brush)
-        brush = QtGui.QBrush(QtGui.QColor(255, 255, 255))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.WindowText, brush)
-        brush = QtGui.QBrush(QtGui.QColor(255, 255, 255))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Text, brush)
-        brush = QtGui.QBrush(QtGui.QColor(0, 0, 0))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Base, brush)
-        brush = QtGui.QBrush(QtGui.QColor(0, 0, 0))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Window, brush)
-        brush = QtGui.QBrush(QtGui.QColor(255, 255, 255, 128))
-        brush.setStyle(QtCore.Qt.NoBrush)
-        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.PlaceholderText, brush)
-        brush = QtGui.QBrush(QtGui.QColor(120, 120, 120))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.WindowText, brush)
-        brush = QtGui.QBrush(QtGui.QColor(120, 120, 120))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.Text, brush)
-        brush = QtGui.QBrush(QtGui.QColor(0, 0, 0))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.Base, brush)
-        brush = QtGui.QBrush(QtGui.QColor(0, 0, 0))
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.Window, brush)
-        brush = QtGui.QBrush(QtGui.QColor(255, 255, 255, 128))
-        brush.setStyle(QtCore.Qt.NoBrush)
-        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.PlaceholderText, brush)
+        # 设置活动状态颜色
+        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.WindowText, QtGui.QBrush(QtGui.QColor(255, 255, 255)))
+        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Text, QtGui.QBrush(QtGui.QColor(255, 255, 255)))
+        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Base, QtGui.QBrush(QtGui.QColor(0, 0, 0)))
+        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Window, QtGui.QBrush(QtGui.QColor(0, 0, 0)))
+        
+        # 设置非活动状态颜色
+        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.WindowText, QtGui.QBrush(QtGui.QColor(255, 255, 255)))
+        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Text, QtGui.QBrush(QtGui.QColor(255, 255, 255)))
+        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Base, QtGui.QBrush(QtGui.QColor(0, 0, 0)))
+        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Window, QtGui.QBrush(QtGui.QColor(0, 0, 0)))
+        
+        # 设置禁用状态颜色
+        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.WindowText, QtGui.QBrush(QtGui.QColor(120, 120, 120)))
+        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.Text, QtGui.QBrush(QtGui.QColor(120, 120, 120)))
+        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.Base, QtGui.QBrush(QtGui.QColor(0, 0, 0)))
+        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.Window, QtGui.QBrush(QtGui.QColor(0, 0, 0)))
+        
         self.setPalette(palette)
 
-
+# 错误界面
 class errorScreen(QWidget, Ui_error):
     def __init__(self):
         super().__init__()
-        # 设置界面
         self.setupUi(self)
-        # 设置布局
         self.setLayout(self.verticalLayout)
-        # 添加字体
-        font_id1 = QFontDatabase.addApplicationFont("black.ttf")
-        # 获取字体名称
-        self.font_name1 = QFontDatabase.applicationFontFamilies(font_id1)[0]
+        
         # 设置字体
-        font = QFont(self.font_name1, pointSize=18)
+        font_path = resource_path("black.ttf")
+        if os.path.exists(font_path):
+            font_id = QFontDatabase.addApplicationFont(font_path)
+            font_name = QFontDatabase.applicationFontFamilies(font_id)[0] if font_id != -1 else "Helvetica"
+        else:
+            font_name = "Helvetica" if platform.system() != "Windows" else "Consolas"
+            
+        font = QFont(font_name, pointSize=18)
         self.setFont(font)
         self.backButton.setFont(font)
-        # 获取公网IP
-        pubIP = requests.get("https://ident.me", proxies={'http': None, 'https': None}, timeout=2).text.strip()
-        # 替换提示信息中的IP地址
-        self.noticeLabel.setText(self.noticeLabel.text().replace("{ip}", f" [{pubIP}] "))
+        
+        # 获取公网IP并显示
+        try:
+            pubIP = requests.get("https://ident.me", timeout=2).text.strip()
+            self.noticeLabel.setText(self.noticeLabel.text().replace("{ip}", f" [{pubIP}] "))
+        except:
+            self.noticeLabel.setText(self.noticeLabel.text().replace("{ip}", " [IP获取失败] "))
 
     def paintEvent(self, a0):
-        # 绘制界面
+        """绘制背景"""
         painter = QPainter(self)
         painter.drawRect(self.rect())
-        # 加载背景图片
-        pixmap = QPixmap("bg.png")
-        # 绘制背景图片
-        painter.drawPixmap(self.rect(), pixmap)
+        try:
+            pixmap = QPixmap(resource_path("bg.png"))
+            painter.drawPixmap(self.rect(), pixmap)
+        except:
+            painter.fillRect(self.rect(), Qt.black)
 
-
+# 加载中界面
 class loadingScreen(QWidget, Ui_loading):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
         self.setLayout(self.verticalLayout)
-        # 添加字体
-        font_id1 = QFontDatabase.addApplicationFont("black.ttf")
-        # 获取字体名称
-        self.font_name1 = QFontDatabase.applicationFontFamilies(font_id1)[0]
+        
         # 设置字体
-        font = QFont(self.font_name1, pointSize=18)
+        font_path = resource_path("black.ttf")
+        if os.path.exists(font_path):
+            font_id = QFontDatabase.addApplicationFont(font_path)
+            font_name = QFontDatabase.applicationFontFamilies(font_id)[0] if font_id != -1 else "Helvetica"
+        else:
+            font_name = "Helvetica" if platform.system() != "Windows" else "Consolas"
+            
+        font = QFont(font_name, pointSize=18)
         self.setFont(font)
 
     def paintEvent(self, a0):
-        # 创建画笔
+        """绘制背景"""
         painter = QPainter(self)
-        # 绘制矩形
         painter.drawRect(self.rect())
-        # 加载图片
-        pixmap = QPixmap("bg.png") 
-        # 绘制图片
-        painter.drawPixmap(self.rect(), pixmap)
+        try:
+            pixmap = QPixmap(resource_path("bg.png"))
+            painter.drawPixmap(self.rect(), pixmap)
+        except:
+            painter.fillRect(self.rect(), Qt.black)
 
-
+# 关于界面
 class aboutScreen(QWidget, Ui_about):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
         self.setLayout(self.verticalLayout)
-        self.moreInfoButton.clicked.connect(self.moreInfo)
-        # 添加字体
-        font_id1 = QFontDatabase.addApplicationFont("black.ttf")
-        self.font_name1 = QFontDatabase.applicationFontFamilies(font_id1)[0]
-        font = QFont(self.font_name1, pointSize=18)
+        self.moreInfoButton.clicked.connect(self.moreInfo)  # 绑定更多信息按钮
+        
+        # 设置字体
+        font_path = resource_path("black.ttf")
+        if os.path.exists(font_path):
+            font_id = QFontDatabase.addApplicationFont(font_path)
+            font_name = QFontDatabase.applicationFontFamilies(font_id)[0] if font_id != -1 else "Helvetica"
+        else:
+            font_name = "Helvetica" if platform.system() != "Windows" else "Consolas"
+            
+        font = QFont(font_name, pointSize=18)
         self.setFont(font)
         self.backButton.setFont(font)
         self.moreInfoButton.setFont(font)
 
     def moreInfo(self):
+        """显示更多信息"""
         self.moreInfoButton.close()
-        # 设置文本
         text = ('<html><head/><body><p>Hollow Deep Dive System</p><p>Copyright ©A.K.A. </p><p>Led by Helios Reserch '
-                'Institute.</p><p>Author: BW</p><p>作者：Pickup_拾柒</p><p>作者的主页：<a '
+                'Institute.</p><p>Author: BW</p><p>作者：Pickup_拾柒</p><p>作者主页：<a '
                 'href="https://space.bilibili.com/1638525867"><span style=" text-decoration: underline; '
-                'color:#a6c100;">Pickup_拾柒的个人空间</span></a></p></body></html>')
+                'color:#a6c100;">Pickup_拾柒的个人空间</span></a></p>'
+                '<p>增加MacOS运行部分作者：NAAAAAAAAA1212（GITHUB）</p><p>作者主页：<a '
+                'href="https://github.com/NAAAAAAAAA1212"><span style=" text-decoration: underline; '
+                'color:#a6c100;">NAAAAAAAAA1212 Github主页</span></a></p>'
+                '<p>跨平台版本支持：Windows & macOS</p></body></html>')
         self.label_2.setText(text)
 
     def paintEvent(self, a0):
+        """绘制背景"""
         painter = QPainter(self)
         painter.drawRect(self.rect())
-        # 绘制背景图片
-        pixmap = QPixmap("bg.png")  # 换成自己的图片的相对路径
-        painter.drawPixmap(self.rect(), pixmap)
+        try:
+            pixmap = QPixmap(resource_path("bg.png"))
+            painter.drawPixmap(self.rect(), pixmap)
+        except:
+            painter.fillRect(self.rect(), Qt.black)
 
+# 退出界面
 class exitScreen(QWidget, Ui_exit):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
         self.setLayout(self.verticalLayout)
-        # 添加字体
-        font_id1 = QFontDatabase.addApplicationFont("black.ttf")
-        self.font_name1 = QFontDatabase.applicationFontFamilies(font_id1)[0]
-        font = QFont(self.font_name1, pointSize=18)
+        
+        # 设置字体
+        font_path = resource_path("black.ttf")
+        if os.path.exists(font_path):
+            font_id = QFontDatabase.addApplicationFont(font_path)
+            font_name = QFontDatabase.applicationFontFamilies(font_id)[0] if font_id != -1 else "Helvetica"
+        else:
+            font_name = "Helvetica" if platform.system() != "Windows" else "Consolas"
+            
+        font = QFont(font_name, pointSize=18)
         self.setFont(font)
-        # 连接退出按钮的点击事件
-        self.exitButton.clicked.connect(sys.exit)
-        # 设置退出按钮的字体
+        self.exitButton.clicked.connect(sys.exit)  # 退出应用程序
         self.exitButton.setFont(font)
-        # 设置返回按钮的字体
         self.backButton_2.setFont(font)
 
     def paintEvent(self, a0):
-        # 绘制窗口
+        """绘制背景"""
         painter = QPainter(self)
         painter.drawRect(self.rect())
-        # 绘制背景图片
-        pixmap = QPixmap("bg.png")  # 换成自己的图片的相对路径
-        painter.drawPixmap(self.rect(), pixmap)
+        try:
+            pixmap = QPixmap(resource_path("bg.png"))
+            painter.drawPixmap(self.rect(), pixmap)
+        except:
+            painter.fillRect(self.rect(), Qt.black)
 
-
+# 应用程序入口
 if __name__ == "__main__":
     app = QApplication([])
     window = Main()
